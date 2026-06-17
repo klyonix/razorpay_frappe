@@ -9,4 +9,9 @@ def sync_payment_link_status():
 	)
 
 	for p_link in pending_payment_links:
-		frappe.get_doc("Razorpay Payment Link", p_link).fetch_latest_status()
+		try:
+			frappe.get_doc("Razorpay Payment Link", p_link).fetch_latest_status()
+			frappe.db.commit()
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Razorpay Sync Error: {p_link}")
+			frappe.db.rollback()
