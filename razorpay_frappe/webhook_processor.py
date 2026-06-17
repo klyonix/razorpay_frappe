@@ -30,9 +30,14 @@ class RazorpaySubscriptionWebhookEvents(StrEnum):
 	SubscriptionResumed = "subscription.resumed"
 
 
+class RazorpayPaymentLinkWebhookEvents(StrEnum):
+	PaymentLinkPaid = "payment_link.paid"
+	PaymentLinkPartiallyPaid = "payment_link.partially_paid"
+
+
 SUPPORTED_WEBHOOK_EVENTS = set(RazorpayPaymentWebhookEvents).union(
 	RazorpaySubscriptionWebhookEvents
-)
+).union(RazorpayPaymentLinkWebhookEvents)
 
 
 class WebhookProcessor:
@@ -50,6 +55,8 @@ class WebhookProcessor:
 
 		if self.is_subscription_event:
 			self.process_subscription_event()
+		elif self.is_payment_link_event:
+			self.process_payment_link_event()
 		elif self.is_standalone_order:
 			self.process_standalone_order()
 
@@ -81,10 +88,29 @@ class WebhookProcessor:
 			frappe.log_error("Razorpay Order not found!")
 
 
+	def process_payment_link_event(self):
+		payment_link_id = self.get_payment_link_id()
+		if payment_link_id:
+			plink = frappe.db.get_value("Razorpay Payment Link", {"id": payment_link_id}, "name")
+			if plink:
+				doc = frappe.get_doc("Razorpay Payment Link", plink)
+				doc.fetch_latest_status()
+				frappe.db.commit()
+			else:
+				frappe.log_error("Razorpay Payment Link not found for webhook!", "Razorpay Webhook Error")
+
+	@property
+	def is_payment_link_event(self) -> bool:
+		return self.event in set(RazorpayPaymentLinkWebhookEvents)
+
 	@property
 	def is_standalone_order(self) -> bool:
 		order_id = self.get_payment_order_id()
 		return frappe.db.exists("Razorpay Order", {"order_id": order_id})
+
+	def get_payment_link_id(self) -> str:
+		if self.payload.get("payment_link"):
+			return self.payload.get("payment_link").get("entity", {}).get("id")
 
 	def get_payment_order_id(self) -> str:
 		if self.payload.get("payment"):
